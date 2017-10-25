@@ -1,0 +1,13 @@
+import pandas as pd
+import numpy as np
+wd='c:/users/Administrator/desktop/test.xlsx'
+df=pd.read_excel(wd)
+k=0
+res=pd.DataFrame(columns={'日期','姓名','利息'})
+for i in range(1,df.shape[1]):
+    for j in range(df.shape[0]):
+        if np.isnan(df.iloc[j,i]) ==False :
+            res.loc[k]=[df.iloc[j,0],df.columns[i],df.iloc[j,i]]
+            k+=1
+print(res.head(10))
+res.to_csv('c:/users/Administrator/desktop/res.csv')
