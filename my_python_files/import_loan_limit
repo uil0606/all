@@ -1,0 +1,46 @@
+# coding:utf-8
+import xml.dom.minidom
+import pymysql
+import os
+
+strtitle = ['报告编号',' 查询记录','查询记录汇总','信贷审批查询记录明细','报告说明']
+
+db = pymysql.connect(host='127.0.0.1', port=3306, user='root', passwd='1234zxcv', db='loanlimit', charset='utf8')
+
+ssstr_para1 = "idloan_info,loan_infocol0,loan_infocol1,loan_infocol2,loan_infocol3,loan_infocol4," \
+              "loan_infocol5,loan_infocol6,loan_infocol7,loan_infocol8,loan_infocol9,loan_infocol10,loan_infocol11," \
+              "loan_infocol12,loan_infocol13"
+
+# 使用cursor()方法获取操作游标
+cursor = db.cursor()
+
+fi = open("C:\\Users\\magfi\\Desktop\\loan_info.txt", "r", encoding='utf-8')
+for line in fi.readlines():
+    # print(line)
+    res = line[:-1].split(sep='\t')
+    # print(res)
+    a=''
+    for i in res:
+        a = a+',"'+str(i)+'"'
+    a=a[1:]
+    sql_1 = "insert into loan_info(" + ssstr_para1 + ") values (" + a + ")"
+    print(sql_1)
+    try:
+        # 执行sql语句
+        cursor.execute(sql_1)
+        # 提交到数据库执行
+        db.commit()
+    except:
+        # Rollback in case there is any error
+        db.rollback()
+
+
+fi.close()
+db.close()
+
+
+
+
+
+
+
