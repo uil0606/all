@@ -1,0 +1,61 @@
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.metrics import roc_curve,auc
+import matplotlib.pyplot as plt
+
+
+df = pd.read_excel('C:\\Users\\magfi\\Desktop\\结果集.xlsx')
+# df = pd.concat([df.y,df.iloc[:,1:]],axis=1)
+# x = df.iloc[:, 1:]
+# y = df.iloc[:, 0]
+
+sam=df[df.y==0]
+df2=pd.concat([df,sam,sam,sam,sam],axis=0)
+# print(df2.shape)
+lr=LogisticRegression(penalty='l2',max_iter=1000,C=1.5)
+lr2=LogisticRegressionCV(cv=5,penalty='l2',max_iter=1000)
+
+lr.fit(df2.iloc[:, 1:], df2.iloc[:,0])
+lr2.fit(df2.iloc[:, 1:], df2.iloc[:,0])
+# print(df.iloc[:,1:],df.iloc[:,0])
+print(lr.coef_,lr.intercept_)
+print(lr2.coef_,lr2.intercept_)
+# print(lr2)
+fit_and_pre=pd.concat([df.y, pd.DataFrame(lr.predict(df.iloc[:, 1:]))], axis=1)
+fit_and_pre2=pd.concat([df.y, pd.DataFrame(lr2.predict(df.iloc[:, 1:]))], axis=1)
+
+
+def conf_matrix(fit_and_pre):
+    tp, tn, fp, fn = 0, 0, 0, 0
+    for i in range(len(fit_and_pre)):
+        if fit_and_pre.iloc[i, 0] < 0.5 and fit_and_pre.iloc[i, 1] < 0.5:
+            tp += 1
+        elif fit_and_pre.iloc[i, 0] < 0.5 and fit_and_pre.iloc[i, 1] >= 0.5:
+            fn += 1
+        elif fit_and_pre.iloc[i, 0] >= 0.5 and fit_and_pre.iloc[i, 1] >= 0.5:
+            tn += 1
+        else:
+            fp += 1
+    print('confusion matrix:')
+    print('tp=%s fn=%s' %(tp, fn))
+    print('fp=%s tn=%s' %(fp, tn))
+    print('accuraty=%.2f  tpr=%.2f fpr=%.2f' %((tp+tn)/(tp+tn+fp+fn),tp/(tp+fn),fp/(fp+tn)))
+    print()
+    return
+
+conf_matrix(fit_and_pre)
+conf_matrix(fit_and_pre2)
+
+
+
+# fin_set = pd.read_excel('C:\\Users\\magfi\\Desktop\\data_set_v1.xlsx')
+# res = lr.predict_proba(fin_set.iloc[:, 2:])
+# roc_cu = roc_curve(fit_and_pre.iloc[:, 0], fit_and_pre.iloc[:, 0])
+# plt.plot(roc_cu)
+# plt.show()
+
+# res=pd.concat([pd.DataFrame(selector.ranking_),pd.DataFrame(df.columns)],axis=1)
+
+# np.savetxt('C:\\Users\\magfi\\Desktop\\ranking.txt',res,fmt='%.2f')
