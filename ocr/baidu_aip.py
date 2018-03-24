@@ -20,9 +20,7 @@ def get_file_content(filePath):
     with open(filePath, 'rb') as fp:
         return fp.read()
 
-    # 定义参数变量
-
-
+# 定义参数变量
 options = {
     'detect_direction': 'true',
     'language_type': 'CHN_ENG',
