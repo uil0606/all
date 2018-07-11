@@ -1,0 +1,187 @@
+import datetime, time
+import pymysql
+import pandas as pd
+import smtplib
+import email.mime.multipart
+import email.mime.text
+from email.mime.application import MIMEApplication
+
+
+def get_data(d1, t1, d2, t2):
+    # 连接库，获取审批结果
+    # 测试环境
+    conn1 = pymysql.connect(host='***', port=3360, user='***', passwd='***', db='riskdbtest',
+                            charset='utf8')
+    
+    sql1 = "SELECT user_id ,idno,name,phone,result,credit_line,strategy_code,create_time " \
+           "FROM assets_business_decision " \
+           "where create_time> '" + d1 + " " + t1 + "' and create_time <'" + d2 + " " + t2 + "';"
+    # print(sql1)
+    df1 = pd.read_sql(sql1, conn1)
+    conn1.close()
+
+    # 连接平台生产环境，获取资料信息
+    conn2 = pymysql.connect(host='***', port=3360, user='***', passwd='***', db='***',
+                            charset='utf8')
+    sql2 = '''select * from (
+        SELECT
+            out_user_code as '店铺ID',
+            max(if(tel_relation='父母' || tel_relation='配偶',cust_tel,'')) as '第一紧急联系人电话',
+            max(if(tel_relation='父母' || tel_relation='配偶',tel_name,'')) as '第一紧急联系人姓名',
+            max(if(tel_relation='父母' || tel_relation='配偶',tel_relation,'')) as '第一紧急联系人关系', 
+            max(if(tel_relation='朋友' || tel_relation='亲属',cust_tel,'')) as '第二紧急联系人电话',
+            max(if(tel_relation='朋友' || tel_relation='亲属',tel_name,'')) as '第二紧急联系人姓名',
+            max(if(tel_relation='朋友' || tel_relation='亲属',tel_relation,'')) as '第二紧急联系人关系', 
+            max(if(tel_relation='同事',cust_tel,'')) as '第三紧急联系人电话', 
+            max(if(tel_relation='同事',tel_name,'')) as '第三紧急联系人姓名',
+            max(if(tel_relation='同事',tel_relation,'')) as '第三紧急联系人关系' 
+        FROM credit_cif_cust_phone_info where out_user_code='hh58'
+        GROUP BY
+            out_user_code ) A 
+        inner join
+        (SELECT 
+            max(if(image_name='ID_CARD_1',image_url,'')) as '身份证正面' ,
+            max(if(image_name='ID_CARD_2',image_url,'')) as '身份证反面' ,
+            max(if(image_name='ID_CARD_3',image_url,'')) as '活体' ,
+            max(if(image_type='YING_YE_ZHI_ZHAO',image_url,'')) as '营业执照' ,
+            max(if(image_type='XU_KE_ZHENG_ZHAOPIAN',image_url,'')) as '食品卫生许可证' ,
+            max(if(image_name='ZU_LIN_HETONG_1',image_url,'')) as '租赁合同1', 
+            max(if(image_name='ZU_LIN_HETONG_2',image_url,'')) as '租赁合同2', 
+            max(if(image_name='ZU_LIN_HETONG_3',image_url,'')) as '租赁合同3', 
+            max(if(image_name='ZU_LIN_HETONG_4',image_url,'')) as '租赁合同4', 
+            max(if(image_name='ZU_LIN_HETONG_5',image_url,'')) as '租赁合同5', 
+            max(if(image_type='MEN_TOU_ZHAO_PIAN',image_url,'')) as '门头照片',  
+            max(if(image_type='MEN_DIAN_ZHAOPIAN',image_url,'')) as '借款人店内合照' 
+        FROM credit_cif_cust_image_info where out_user_code='hh58'
+        GROUP BY out_user_code 
+            ) B
+        inner join
+        (select address_detail as '公司经营地址' from credit_cif_cust_address_info where address_type='COMPANY_ADDRESS' and out_user_code='hh58') C
+        inner join 
+        (select other_info as '申请金额' from credit_cif_submit_process_info where out_user_code='hh58') D'''
+    df2 = pd.DataFrame(columns=['店铺ID', '第一紧急联系人电话', '第一紧急联系人姓名', '第一紧急联系人关系', '第二紧急联系人电话',
+                                '第二紧急联系人姓名', '第二紧急联系人关系', '第三紧急联系人电话', '第三紧急联系人姓名',
+                                '第三紧急联系人关系', '身份证正面', '身份证反面', '活体', '营业执照', '食品卫生许可证', '租赁合同1',
+                                '租赁合同2', '租赁合同3', '租赁合同4', '租赁合同5', '门头照片', '借款人店内合照', '公司经营地址', '申请金额'])
+    for i in range(len(df1)):
+        sql_temp = sql2.replace('hh58', str(df1.ix[i, 'user_id']))
+        df_t = pd.read_sql(sql_temp, conn2)
+        df_t['申请金额'] = df_t['申请金额'].map(lambda x: float(eval(x)['applyBal']))
+        df2 = pd.concat([df2, df_t], axis=0)
+    conn2.close()
+
+    print(len(df1), len(df2))
+    df3 = pd.merge(df1, df2, left_on='user_id', right_on='店铺ID')
+    return df3
+
+
+def send_email(smtpHost, sendAddr, password, recipientAddrs, accAddrs, flname, pwd, subject='', content=''):
+    msg = email.mime.multipart.MIMEMultipart()
+    msg['from'] = sendAddr
+    msg['to'] = recipientAddrs
+    msg['cc'] = accAddrs
+    msg['subject'] = subject
+    # content = content
+    txt = email.mime.text.MIMEText(content, 'plain', 'utf-8')
+    msg.attach(txt)
+
+    # 添加附件，传送文件
+    part = MIMEApplication(open(pwd + flname, 'rb').read())
+    part.add_header('Content-Disposition', 'attachment', filename=flname)
+    msg.attach(part)
+
+    smtp = smtplib.SMTP()
+    smtp.connect(smtpHost, '25')
+    smtp.login(sendAddr, password)
+    smtp.sendmail(sendAddr, recipientAddrs.split(',') + accAddrs.split(','), str(msg))
+    print("发送成功！")
+    smtp.quit()
+    return
+
+
+def oper1(def_pwd, d1, t1, d2, t2, hour0, minute0):
+    # 根据时间，定时执行任务，获取数据，落地文件，编辑并返回邮件主题和内容及文件名称
+    # def_pwd：默认文件夹路径；d1，t1：客户开始进件的日期和时间；d2，t2：客户结束进件的日期和时间；hour0，minute0：任务执行时间
+    while True:
+        tnow = datetime.datetime.now()
+        print(tnow)
+        if tnow.hour == hour0 and tnow.minute == minute0:
+            break
+        time.sleep(59)
+
+    # 根据时间获取客户数据,df为所有跑决策客户，df_temp为审批有额度客户
+    df = get_data(d1=d1, t1=t1, d2=d2, t2=t2)
+    df_temp = df[(df['result'] == 'A') | (df['result'] == 'M')]
+
+    # 数据落到本地文件，设置路径和名称
+    tnow2 = str(tnow)[:-7].replace(' ', '').replace(':', '').replace('-', '')
+    fname = 'eleme_' + tnow2 + '.xlsx'
+    df.to_excel(def_pwd + 'all/' + fname)
+    df.to_excel(def_pwd + fname)
+
+    # 设置邮件主题，内容
+    subject = 'eleme ' + tnow2 + ' 自动审批结果文件'
+    content = 'FYI:\n' \
+              '   ' + str(tnow)[:-7] + ' eleme审批名单。\n' \
+                                       '   数量: ' + str(len(df)) + '。\n\n' \
+                                                                  'from  ***  '
+    return subject, content, fname
+
+
+if __name__ == "__main__":
+    # 将*** 替换成需要的参数
+    # 客户数据默认存储路径
+    def_pwd = '***'
+
+    # 邮件基本信息：发件人，收件人，抄送人
+    hostn = 'smtp.sina.com'
+    sendn = '***'
+    keyn = '***'
+    # 收件人
+    recn = '***'
+    # recn = '***'
+    # 抄送人
+    accn = ''
+    # accn = '***'
+
+    # 获取客户申请日期区间，昨日和今日
+    today = datetime.datetime(2018,5,29)
+    # today = str(datetime.datetime.now())[:10]
+    yeday = str(today - datetime.timedelta(days=1))[:10]
+    today=str(today)[:10]
+    print(today, yeday)
+
+    #  ------------------------任务1开始：昨日16点到今日10点------------------------
+    # 定时触发任务1  输入参数：d1,t1,d2,t2,hour0,minute0  输出参数：subject,content
+    subject, content, fname = oper1(def_pwd=def_pwd, d1=yeday, t1='16:00:00', d2=today, t2='10:00:00', hour0=13,
+                                    minute0=44)
+    # 发送邮件
+    try:
+        send_email(hostn, sendn, keyn, recn, accn, fname, def_pwd, subject, content)
+    except Exception as err:
+        print(err)
+    # 任务1结束
+
+    #  ------------------------任务2：今日10点到今日14点------------------------
+    # 定时触发任务2  输入参数：d1,t1,d2,t2,hour0,minute0  输出参数：subject,content
+    subject, content, fname = oper1(def_pwd=def_pwd, d1=today, t1='10:00:00', d2=today, t2='14:00:00', hour0=14,
+                                    minute0=0)
+    # 发送邮件
+    try:
+        send_email(hostn, sendn, keyn, recn, accn, fname, def_pwd, subject, content)
+    except Exception as err:
+        print(err)
+    # 任务2结束
+
+    #  ------------------------任务3：今日14点到今日16点------------------------
+    # 定时触发任务3  输入参数：d1,t1,d2,t2,hour0,minute0  输出参数：subject,content
+    subject, content, fname = oper1(def_pwd=def_pwd, d1=today, t1='14:00:00', d2=today, t2='16:00:00', hour0=16,
+                                    minute0=0)
+    # 发送邮件
+    try:
+        send_email(hostn, sendn, keyn, recn, accn, fname, def_pwd, subject, content)
+    except Exception as err:
+        print(err)
+    # 任务3结束
+
+    print("今日发送完毕")
